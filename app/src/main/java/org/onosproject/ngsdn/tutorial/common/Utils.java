@@ -16,9 +16,11 @@
 
 package org.onosproject.ngsdn.tutorial.common;
 
+import org.onlab.packet.MacAddress;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.PortNumber;
+import org.onosproject.net.behaviour.MeterQuery;
 import org.onosproject.net.flow.DefaultFlowRule;
 import org.onosproject.net.flow.DefaultTrafficSelector;
 import org.onosproject.net.flow.DefaultTrafficTreatment;
@@ -31,10 +33,13 @@ import org.onosproject.net.group.GroupBucket;
 import org.onosproject.net.group.GroupBuckets;
 import org.onosproject.net.group.GroupDescription;
 import org.onosproject.net.group.GroupKey;
-import org.onosproject.net.pi.model.PiActionProfileId;
-import org.onosproject.net.pi.model.PiTableId;
+import org.onosproject.net.meter.MeterId;
+import org.onosproject.net.meter.MeterOperation;
+import org.onosproject.net.meter.MeterProgrammable;
+import org.onosproject.net.pi.model.*;
 import org.onosproject.net.pi.runtime.PiAction;
 import org.onosproject.net.pi.runtime.PiGroupKey;
+import org.onosproject.net.pi.runtime.PiMeterCellConfig;
 import org.onosproject.net.pi.runtime.PiTableAction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,6 +103,40 @@ public final class Utils {
                 groupKey, groupId, appId);
     }
 
+    public static void demo() {
+        PiTableId tableId = PiTableId.of("IngressPipeImpl.mymeter");
+
+    }
+//    public static MeterOperation buildMeterOp(DeviceId deviceId,
+//                                              ApplicationId appId,
+//                                              MeterId meterId,
+//                                              String meterTid,
+//                                              MeterProgrammable mp,
+//                                              MeterQuery mq) {
+//        // stream that src_mac == 00:00:00:00:00:1a will be limited
+//        final PiCriterion srcMACLimit = PiCriterion.builder().matchExact(
+//                PiMatchFieldId.of("hdr.ethernet.src_addr"),
+//                MacAddress.valueOf("00:00:00:00:00:1a").toBytes()
+//        ).build();
+//        final PiAction srcMACLimitAction = PiAction.builder()
+//                .withId(PiActionId.of("IngressPipeImpl.m_action"))
+//                .build();
+//        buildFlowRule(deviceId, appId, "IngressPipeImpl.m_read", srcMACLimit, srcMACLimitAction);
+//
+//        // if local_metadata.meter_tag == 0, drop
+//        final PiCriterion colorGreenDropLimit = PiCriterion.builder().matchExact(
+//                PiMatchFieldId.of("IngressPipeImpl.local_metadata.meter_tag"),
+//               0
+//        ).build();
+//        final PiAction colorGreenDropLimitAction = PiAction.builder()
+//                .withId(PiActionId.of("IngressPipeImpl.drop"))
+//                .build();
+//        buildFlowRule(deviceId, appId, "IngressPipeImpl.m_read", srcMACLimit, srcMACLimitAction);
+//        buildFlowRule(deviceId, appId, "IngressPipeImpl.m_filter", colorGreenDropLimit, colorGreenDropLimitAction);
+//
+//
+//    }
+
     public static FlowRule buildFlowRule(DeviceId switchId, ApplicationId appId,
                                          String tableId, PiCriterion piCriterion,
                                          PiTableAction piAction) {
@@ -108,9 +147,9 @@ public final class Utils {
                 .withPriority(DEFAULT_FLOW_RULE_PRIORITY)
                 .makePermanent()
                 .withSelector(DefaultTrafficSelector.builder()
-                                      .matchPi(piCriterion).build())
+                        .matchPi(piCriterion).build())
                 .withTreatment(DefaultTrafficTreatment.builder()
-                                       .piTableAction(piAction).build())
+                        .piTableAction(piAction).build())
                 .build();
     }
 

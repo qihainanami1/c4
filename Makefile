@@ -128,8 +128,8 @@ _copy_p4c_out:
 _mvn_package:
 	$(info *** Building ONOS app...)
 	@mkdir -p app/target
-	@docker run --rm -v ${curr_dir}/app:/mvn-src -w /mvn-src ${MVN_IMG} mvn -o clean package
-
+	# @docker run --rm -v ${curr_dir}/app:/mvn-src -w /mvn-src ${MVN_IMG} mvn clean package
+	mvn clean package -Dmaven.repo.local=/home/p4/.m2/repository -f ${curr_dir}/app
 app-build: p4-build _copy_p4c_out _mvn_package
 	$(info *** ONOS app .oar package created succesfully)
 	@ls -1 app/target/*.oar

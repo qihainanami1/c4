@@ -16,13 +16,13 @@
 
 package org.onosproject.ngsdn.tutorial;
 
+import com.google.common.collect.ImmutableList;
 import org.onlab.packet.MacAddress;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.mastership.MastershipService;
-import org.onosproject.net.ConnectPoint;
-import org.onosproject.net.DeviceId;
-import org.onosproject.net.Host;
-import org.onosproject.net.PortNumber;
+import org.onosproject.net.*;
+import org.onosproject.net.behaviour.MeterQuery;
+import org.onosproject.net.behaviour.PiPipelineProgrammable;
 import org.onosproject.net.config.NetworkConfigService;
 import org.onosproject.net.device.DeviceEvent;
 import org.onosproject.net.device.DeviceListener;
@@ -37,11 +37,15 @@ import org.onosproject.net.host.HostListener;
 import org.onosproject.net.host.HostService;
 import org.onosproject.net.intf.Interface;
 import org.onosproject.net.intf.InterfaceService;
+import org.onosproject.net.meter.*;
 import org.onosproject.net.pi.model.PiActionId;
 import org.onosproject.net.pi.model.PiActionParamId;
 import org.onosproject.net.pi.model.PiMatchFieldId;
-import org.onosproject.net.pi.runtime.PiAction;
-import org.onosproject.net.pi.runtime.PiActionParam;
+import org.onosproject.net.pi.model.PiMeterId;
+import org.onosproject.net.pi.runtime.*;
+import org.onosproject.p4runtime.api.P4RuntimeController;
+import org.onosproject.p4runtime.api.P4RuntimeWriteClient;
+import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
@@ -51,6 +55,7 @@ import org.onosproject.ngsdn.tutorial.common.FabricDeviceConfig;
 import org.onosproject.ngsdn.tutorial.common.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import p4.v1.P4RuntimeOuterClass;
 
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -64,16 +69,17 @@ import static org.onosproject.ngsdn.tutorial.AppConstants.INITIAL_SETUP_DELAY;
         immediate = true,
         // *** TODO EXERCISE 4
         // Enable component (enabled = true)
-        enabled = false
+        enabled = true
 )
 public class L2BridgingComponent {
 
     private final Logger log = LoggerFactory.getLogger(getClass());
-
     private static final int DEFAULT_BROADCAST_GROUP_ID = 255;
+    private static final int MY_NEIGH_SWITCHES_GROUP_ID = 254;
 
     private final DeviceListener deviceListener = new InternalDeviceListener();
     private final HostListener hostListener = new InternalHostListener();
+
 
     private ApplicationId appId;
 
@@ -94,6 +100,8 @@ public class L2BridgingComponent {
     private InterfaceService interfaceService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    private MeterService meterService;
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private NetworkConfigService configService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
@@ -107,6 +115,8 @@ public class L2BridgingComponent {
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private MainComponent mainComponent;
+
+
 
     //--------------------------------------------------------------------------
     // COMPONENT ACTIVATION.
@@ -126,6 +136,7 @@ public class L2BridgingComponent {
         mainComponent.scheduleTask(this::setUpAllDevices, INITIAL_SETUP_DELAY);
 
         log.info("Started");
+
     }
 
     @Deactivate
@@ -158,6 +169,7 @@ public class L2BridgingComponent {
         // insertUnmatchedBridgingFlowRule(deviceId);
     }
 
+
     /**
      * Inserts an ALL group in the ONOS core to replicate packets on all host
      * facing ports. This group will be used to broadcast all ARP/NDP requests.
@@ -185,8 +197,17 @@ public class L2BridgingComponent {
         final GroupDescription multicastGroup = Utils.buildMulticastGroup(
                 appId, deviceId, DEFAULT_BROADCAST_GROUP_ID, ports);
 
+
+        // For each switch, gid=0x254 represent all neigh ports
+        final GroupDescription multicastGroup2 = Utils.buildMulticastGroup(
+                appId, deviceId, MY_NEIGH_SWITCHES_GROUP_ID, getSwFacingPorts(deviceId));
+
+
         // Insert.
         groupService.addGroup(multicastGroup);
+        groupService.addGroup(multicastGroup2);
+
+
     }
 
     /**
@@ -224,12 +245,30 @@ public class L2BridgingComponent {
                         MacAddress.valueOf("FF:FF:00:00:00:00").toBytes())
                 .build();
 
+        // Match PortAll = 233 - Match exact 233
+        final PiCriterion portAllCriterion = PiCriterion.builder()
+                .matchExact(
+                        PiMatchFieldId.of("hdr.cpu_out.egress_port"),
+                        233
+                ).build();
+
         // Action: set multicast group id
         final PiAction setMcastGroupAction = PiAction.builder()
                 .withId(PiActionId.of("IngressPipeImpl.set_multicast_group"))
                 .withParameter(new PiActionParam(
                         PiActionParamId.of("gid"),
                         DEFAULT_BROADCAST_GROUP_ID))
+                .build();
+
+        final PiCriterion aclCriterion = PiCriterion.builder()
+                .matchTernary(
+                        PiMatchFieldId.of("hdr.ethernet.dst_addr"),
+                        0x0812,
+                        16)
+                .build();
+
+        final PiAction aclAction = PiAction.builder()
+                .withId(PiActionId.of("IngressPipeImpl.send_to_cpu"))
                 .build();
 
         //  Build 2 flow rules.
@@ -244,8 +283,61 @@ public class L2BridgingComponent {
                 deviceId, appId, tableId,
                 ipv6MulticastCriterion, setMcastGroupAction);
 
+
+        // Action: set multicast group id
+        final PiAction setMcastGroupAction2 = PiAction.builder()
+                .withId(PiActionId.of("IngressPipeImpl.set_multicast_group"))
+                .withParameter(new PiActionParam(
+                        PiActionParamId.of("gid"),
+                        MY_NEIGH_SWITCHES_GROUP_ID))
+                .build();
+        final FlowRule rule3 = Utils.buildFlowRule(
+                deviceId, appId, "IngressPipeImpl.portall_to_multicast",
+                portAllCriterion, setMcastGroupAction2);
+
+        final FlowRule rule4 = Utils.buildFlowRule(
+                deviceId, appId, "IngressPipeImpl.acl_table",
+                aclCriterion, aclAction);
+
+        final PiCriterion limitMatch = PiCriterion.builder().matchExact(
+                PiMatchFieldId.of("standard_metadata.ingress_port"),
+                        3
+        ).build();
+        final PiAction limitAction = PiAction.builder()
+                .withId(PiActionId.of("IngressPipeImpl.m_action"))
+                        .withParameter(new PiActionParam(
+                                PiActionParamId.of("meter_index"),
+                                0
+                        )).build();
+        final FlowRule rule5 = Utils.buildFlowRule(
+                deviceId, appId, "IngressPipeImpl.m_read",
+                limitMatch, limitAction
+        );
+
+        final PiCriterion filterMatch = PiCriterion.builder().matchExact(
+                PiMatchFieldId.of("local_metadata.meter_tag"),
+                0
+        ).build();
+
+        final PiAction filterAction = PiAction.builder()
+                .withId(PiActionId.of("IngressPipeImpl.NoAction")).build();
+        final FlowRule rule6 = Utils.buildFlowRule(
+                deviceId, appId, "IngressPipeImpl.m_filter",
+                filterMatch, filterAction
+        );
+
+        PiMeterCellConfig config = PiMeterCellConfig.builder()
+                .withMeterCellId(PiMeterCellId.ofIndirect(PiMeterId.of("IngressPipeImpl.my_meter"), 1))
+                .withMeterBand(new PiMeterBand(102400, 1057600))
+                .build();
+
+
+
+
+
+
         // Insert rules.
-        flowRuleService.applyFlowRules(rule1, rule2);
+        flowRuleService.applyFlowRules(rule1, rule2, rule5, rule6);
     }
 
     /**
@@ -420,6 +512,7 @@ public class L2BridgingComponent {
             final DeviceId deviceId = host.location().deviceId();
             final PortNumber port = host.location().port();
 
+
             mainComponent.getExecutorService().execute(() -> {
                 log.info("{} event! host={}, deviceId={}, port={}",
                         event.type(), host.id(), deviceId, port);
@@ -440,6 +533,8 @@ public class L2BridgingComponent {
      * @param deviceId device ID
      * @return set of host facing ports
      */
+
+    // FUCK! the multicast_group don't add port to switch, but to host !!!
     private Set<PortNumber> getHostFacingPorts(DeviceId deviceId) {
         // Get all interfaces configured via netcfg for the given device ID and
         // return the corresponding device port number. Interface configuration
@@ -452,11 +547,21 @@ public class L2BridgingComponent {
         //     }
         //   ]
         // }
+        // get all ports for each switch by reading netcfg.json
         return interfaceService.getInterfaces().stream()
                 .map(Interface::connectPoint)
                 .filter(cp -> cp.deviceId().equals(deviceId))
                 .map(ConnectPoint::port)
                 .collect(Collectors.toSet());
+    }
+
+    private Set<PortNumber> getSwFacingPorts(DeviceId deviceId) {
+        // Returns the list of ports associated with the device.
+        Set<PortNumber> allPort = deviceService.getPorts(deviceId).stream().
+                map(Port::number)
+                .collect(Collectors.toSet());
+        allPort.removeAll(getHostFacingPorts(deviceId));
+        return allPort;
     }
 
     /**
