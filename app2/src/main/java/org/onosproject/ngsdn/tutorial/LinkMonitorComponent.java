@@ -33,7 +33,6 @@ import org.onosproject.net.statistic.Load;
 import org.onosproject.net.statistic.StatisticService;
 import org.onosproject.net.topology.TopologyService;
 import org.onosproject.ngsdn.tutorial.common.Utils;
-import org.onosproject.ngsdn.tutorial.pipeconf.InterpreterImpl;
 import org.onosproject.p4runtime.api.P4RuntimeClient;
 import org.onosproject.p4runtime.api.P4RuntimeController;
 import org.onosproject.p4runtime.api.P4RuntimeStreamClient;
@@ -54,6 +53,7 @@ import java.util.Dictionary;
 import java.util.Properties;
 
 import static org.onlab.util.Tools.get;
+import static org.onosproject.ngsdn.tutorial.AppConstants.APP_NAME;
 
 import org.onlab.packet.Ethernet;
 import org.onosproject.cfg.ComponentConfigService;
@@ -86,7 +86,7 @@ import java.util.concurrent.*;
 
 @Component(immediate = true,
         service = {DelayService.class},
-        enabled = false
+        enabled = true
 )
 public class LinkMonitorComponent implements DelayService {
 
@@ -108,8 +108,6 @@ public class LinkMonitorComponent implements DelayService {
     private final int latencyAverageSize = 5;
     private final int calculateInternal = 4000;
 
-    @Reference(cardinality = ReferenceCardinality.MANDATORY)
-    private MainComponent mainComponent;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     protected PacketService packetService;
@@ -155,9 +153,6 @@ public class LinkMonitorComponent implements DelayService {
     CalculateLatencyTask calculateTask;
 
     LinkProbeReceiver linkProbeReceiver;
-
-    // mapping openflow to P4Runtime protobuf message
-    private InterpreterImpl interpreter = new InterpreterImpl();
 
     public void requestPushPacket() {
 
@@ -446,7 +441,8 @@ public class LinkMonitorComponent implements DelayService {
         }
     }
 
-    private HostId map(String hostAlias) {
+    @Override
+    public HostId map(String hostAlias) {
         String PREFIX = "00:00:00:00:00:";
         String SUFFIX = "/None";
         if (hostAlias.length() == 2) {
@@ -460,16 +456,16 @@ public class LinkMonitorComponent implements DelayService {
 
     private Map<Link, Integer> linkDelays;
 
-    private void getAllECMPPath() {
-        HostId h2 = map("h2");
-        Host src = hostService.getHost(h2);
-        Host dst = hostService.getHost(map("h3"));
-        getAllECMPPath(src, dst);
-    }
+//    private void getAllECMPPath() {
+//        HostId h2 = map("h2");
+//        Host src = hostService.getHost(h2);
+//        Host dst = hostService.getHost(map("h3"));
+//        getAllECMPPath(src, dst);
+//    }
 
 
     // get all equal-cost paths between host h1 and host h2
-    private void getAllECMPPath(Host src, Host dst) {
+    public void calculateAllECMPPath(Host src, Host dst) {
         linkDelays = getAllLinkDelays();
         if (linkDelays.isEmpty()) {
             return;
@@ -489,8 +485,8 @@ public class LinkMonitorComponent implements DelayService {
                 ConnectPoint srcCp = link.src();
                 PortStatistics portStat = deviceService.getDeltaStatisticsForPort(srcCp.deviceId(), srcCp.port());
 //                Load load = statisticService.load(link);
-                log.error("link {}<->{} => load :{}", link.src().deviceId(), link.dst().deviceId(), portStat);
-                log.error("throughput: {}Kbps", portStat.bytesSent() * 8 / portStat.durationSec() / 1024);
+//                log.error("link {}<->{} => load :{}", link.src().deviceId(), link.dst().deviceId(), portStat);
+//                log.error("throughput: {}Kbps", portStat.bytesSent() * 8 / 5 / 1024);
             }
             mpLatencies[index++] = latency;
             if (latency < minLatency) {
@@ -501,8 +497,47 @@ public class LinkMonitorComponent implements DelayService {
         log.error("{}", Arrays.toString(mpLatencies));
     }
 
+    // get all equal-cost paths between host h1 and host h2
+    @Override
+    public Map<Path, Integer> getAllECMPPath(HostId srcId, HostId dstId) {
 
-    private Integer getFromLinkDelays(Link link) {
+        Host src = hostService.getHost(srcId);
+        Host dst = hostService.getHost(dstId);
+        linkDelays = getAllLinkDelays();
+        if (linkDelays.isEmpty()) {
+            return null;
+        }
+        Set<Path> paths = topologyService.getPaths(topologyService.currentTopology(), src.location().deviceId(), dst.location().deviceId());
+        Path priorityPath = null;
+        Integer minLatency = Integer.MAX_VALUE;
+        Map<Path, Integer> res = new HashMap<>();
+        // how many equal cost multi path
+        Integer[] mpLatencies = new Integer[paths.size()];
+        int index = 0;
+        for (Path path : paths) {
+            List<Link> links = path.links();
+            Integer latency = 0;
+            for (Link link : links) {
+                // notice: if src and dst is reverse, our code should also effect !!
+                latency += getFromLinkDelays(link);
+                ConnectPoint srcCp = link.src();
+//                Load load = statisticService.load(link);
+//                log.error("link {}<->{} => load :{}", link.src().deviceId(), link.dst().deviceId(), portStat);
+//                log.error("throughput: {}Kbps", portStat.bytesSent() * 8 / 5 / 1024);
+            }
+            res.put(path, latency);
+            mpLatencies[index++] = latency;
+            if (latency < minLatency) {
+                priorityPath = path;
+            }
+        }
+//        log.error("{} : {}", priorityPath, Arrays.toString(mpLatencies));
+        return res;
+    }
+
+
+    @Override
+    public Integer getFromLinkDelays(Link link) {
         Integer ret = linkDelays.get(link);
 
         if (ret == null) {
@@ -530,11 +565,26 @@ public class LinkMonitorComponent implements DelayService {
         return ret == null ? 10000000 : ret;
     }
 
+    @Override
+    public Integer getFromLinkDelays(String s1, String s2) {
+        Set<Path> paths = topologyService.getPaths(topologyService.currentTopology(), DeviceId.deviceId(s1), DeviceId.deviceId(s2));
+        if (paths.size() != 1) {
+            return -1;
+        }
+        List<Path> l = new ArrayList<>(paths);
+        Path p = l.get(0);
+        List<Link> links = p.links();
+        if (links.size() != 1) {
+            return -1;
+        }
+        return getFromLinkDelays(links.get(0));
+    }
+
     @Activate
     protected void activate() {
         log.info("starting link monitor...");
 
-        appId = mainComponent.getAppId();
+        appId = coreService.registerApplication("org.onosproject.ngsdn-tutorial");
 
         linkProbeReceiver = new LinkProbeReceiver();
         packetService.addProcessor(linkProbeReceiver, PacketProcessor.advisor(1));
@@ -549,7 +599,7 @@ public class LinkMonitorComponent implements DelayService {
         probeWorker.submit(probeTask);
         probeWorker.submit(calculateTask);
 
-        pathWorker.scheduleAtFixedRate(this::getAllECMPPath, 0, 5, TimeUnit.SECONDS);
+//        pathWorker.scheduleAtFixedRate(this::getAllECMPPath, 0, 5, TimeUnit.SECONDS);
 
         log.info("{} start working...", appId.id());
     }

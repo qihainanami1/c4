@@ -85,6 +85,13 @@ public final class PipeconfLoader {
 
         final URL p4InfoUrl = PipeconfLoader.class.getResource(P4INFO_PATH);
         final URL bmv2JsonUrlUrl = PipeconfLoader.class.getResource(BMV2_JSON_PATH);
+
+        if (p4InfoUrl == null) {
+            log.error("can not find p4info.txt");
+            return DefaultPiPipeconf.builder().build();
+        }
+
+
         final PiPipelineModel pipelineModel = P4InfoParser.parse(p4InfoUrl);
 
         return DefaultPiPipeconf.builder()

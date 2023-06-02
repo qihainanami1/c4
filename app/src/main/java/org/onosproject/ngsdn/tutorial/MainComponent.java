@@ -48,6 +48,7 @@ public class MainComponent {
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private CoreService coreService;
 
+
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     //Force activation of this component after the pipeconf has been registered.
     @SuppressWarnings("unused")

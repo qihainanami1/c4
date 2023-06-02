@@ -24,28 +24,25 @@
         <version>2.5.0</version>
     </parent>
 
-    <artifactId>ngsdn-tutorial</artifactId>
+    <groupId>org.onosproject</groupId>
+    <artifactId>app2</artifactId>
     <version>1.0</version>
     <packaging>bundle</packaging>
 
-    <description>NG-SDN tutorial app</description>
-    <url>http://www.onosproject.org</url>
+    <description>ONOS OSGi bundle archetype</description>
+    <url>http://onosproject.org</url>
 
     <properties>
-        <onos.app.name>org.onosproject.ngsdn-tutorial</onos.app.name>
+        <onos.app.name>org.foo.app</onos.app.name>
         <api.version>1.0.0</api.version>
-        <onos.app.title>NG-SDN Tutorial App</onos.app.title>
-        <onos.app.category>Traffic Steering</onos.app.category>
-        <onos.app.url>https://www.onosproject.org</onos.app.url>
-        <onos.app.readme>
-            Provides IPv6 routing capabilities to a leaf-spine network of
-            Stratum switches
-        </onos.app.readme>
-        <api.title>Link Delay Monitor app REST API</api.title>
-        <api.description>
-            Link delay monitor
-        </api.description>
+        <api.description>Sample application REST API</api.description>
+        <onos.app.title>Foo App</onos.app.title>
+        <onos.app.origin>Foo, Inc.</onos.app.origin>
+        <onos.app.category>default</onos.app.category>
         <api.package>org.onosproject.ngsdn.tutorial</api.package>
+        <onos.app.url>http://onosproject.org</onos.app.url>
+        <api.title>Sample app REST API</api.title>
+        <onos.app.readme>ONOS OSGi bundle archetype.</onos.app.readme>
         <web.context>/onos/delay</web.context>
     </properties>
 
@@ -58,7 +55,6 @@
             <scope>provided</scope>
         </dependency>
 
-
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-protocols-p4runtime-api</artifactId>
@@ -66,11 +62,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <dependency>
-            <groupId>org.osgi</groupId>
-            <artifactId>org.osgi.core</artifactId>
-            <!--            <scope>provided</scope>-->
-        </dependency>
 
         <dependency>
             <groupId>org.onosproject</groupId>
@@ -83,21 +74,21 @@
             <groupId>org.onosproject</groupId>
             <artifactId>onos-api</artifactId>
             <version>${onos.version}</version>
-            <!--            <scope>provided</scope>-->
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onlab-osgi</artifactId>
             <version>${onos.version}</version>
-            <!--            <scope>provided</scope>-->
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onlab-misc</artifactId>
             <version>${onos.version}</version>
-            <!--            <scope>provided</scope>-->
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
@@ -137,20 +128,20 @@
             <groupId>org.onosproject</groupId>
             <artifactId>onlab-rest</artifactId>
             <version>${onos.version}</version>
-            <!--            <scope>provided</scope>-->
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <!--            <scope>provided</scope>-->
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>org.onosproject</groupId>
             <artifactId>onos-rest</artifactId>
             <version>${onos.version}</version>
-            <!--            <scope>provided</scope>-->
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
@@ -180,15 +171,13 @@
                 <artifactId>maven-bundle-plugin</artifactId>
                 <configuration>
                     <instructions>
-<!--                        <_wab>src/main/webapp/</_wab>-->
-<!--                        <Include-Resource>WEB-INF/classes/apidoc/swagger.json=target/swagger.json,-->
-<!--                            {maven-resources}-->
-<!--                        </Include-Resource>-->
-<!--                        <Import-Package>*,org.glassfish.jersey.servlet</Import-Package>-->
-<!--                        <Web-ContextPath>${web.context}</Web-ContextPath>-->
-                        <Karaf-Commands>
-                            org.onosproject.ngsdn.tutorial.cli
-                        </Karaf-Commands>
+                        <_wab>src/main/webapp/</_wab>
+                        <Include-Resource>WEB-INF/classes/apidoc/swagger.json=target/swagger.json,
+                            {maven-resources}
+                        </Include-Resource>
+                        <Import-Package>*,org.glassfish.jersey.servlet
+                        </Import-Package>
+                        <Web-ContextPath>${web.context}</Web-ContextPath>
                     </instructions>
                 </configuration>
             </plugin>

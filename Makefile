@@ -130,6 +130,7 @@ _mvn_package:
 	@mkdir -p app/target
 	# @docker run --rm -v ${curr_dir}/app:/mvn-src -w /mvn-src ${MVN_IMG} mvn clean package
 	mvn clean package -Dmaven.repo.local=/home/p4/.m2/repository -f ${curr_dir}/app
+	mvn clean package -Dmaven.repo.local=/home/p4/.m2/repository -f ${curr_dir}/app2
 app-build: p4-build _copy_p4c_out _mvn_package
 	$(info *** ONOS app .oar package created succesfully)
 	@ls -1 app/target/*.oar
@@ -137,13 +138,18 @@ app-build: p4-build _copy_p4c_out _mvn_package
 app-install:
 	$(info *** Installing and activating app in ONOS...)
 	${onos_curl} -X POST -HContent-Type:application/octet-stream \
-		'${onos_url}/v1/applications?activate=true' \
-		--data-binary @app/target/ngsdn-tutorial-1.0-SNAPSHOT.oar
+			'${onos_url}/v1/applications?activate=true' \
+		--data-binary @app/target/ngsdn-tutorial-1.0.oar
+	
+	${onos_curl} -X POST -HContent-Type:application/octet-stream \
+			'${onos_url}/v1/applications?activate=true' \
+		--data-binary @app2/target/app2-1.0.oar
 	@echo
 
 app-uninstall:
 	$(info *** Uninstalling app from ONOS (if present)...)
 	-${onos_curl} -X DELETE ${onos_url}/v1/applications/${app_name}
+	-${onos_curl} -X DELETE ${onos_url}/v1/applications/org.foo.app
 	@echo
 
 app-reload: app-uninstall app-install
