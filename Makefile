@@ -213,6 +213,28 @@ check:
 	make stop
 	make solution-revert
 
+find:
+	-util/mn-cmd h1a ping -c 1  2001:1:1::b
+	util/mn-cmd h1a ping -c 1 2001:1:1::b
+	-util/mn-cmd h1b ping -c 1 2001:1:1::c
+	util/mn-cmd h1b ping -c 1 2001:1:1::c
+	-util/mn-cmd h2 ping -c 1 2001:1:1::b
+	util/mn-cmd h2 ping -c 1 2001:1:1::b
+	util/mn-cmd h2 ping -c 1 2001:1:1::a
+	util/mn-cmd h2 ping -c 1 2001:1:1::c
+	-util/mn-cmd h3 ping -c 1 2001:1:2::1
+	util/mn-cmd h3 ping -c 1 2001:1:2::1
+	util/mn-cmd h3 ping -c 1 2001:1:1::a
+	util/mn-cmd h3 ping -c 1 2001:1:1::b
+	util/mn-cmd h3 ping -c 1 2001:1:1::c
+	-util/mn-cmd h4 ping -c 1 2001:1:2::1
+	util/mn-cmd h4 ping -c 1 2001:1:2::1
+	util/mn-cmd h4 ping -c 1 2001:1:1::a
+	util/mn-cmd h4 ping -c 1 2001:1:1::b
+	util/mn-cmd h4 ping -c 1 2001:1:1::c
+	util/mn-cmd h5 ping -c 1 2001:1:1::c
+	util/mn-cmd h6 ping -c 1 2001:1:1::c
+	util/mn-cmd h6 ping -c 1 2001:1:1::c
 check-sr:
 	make reset
 	make start-v4
