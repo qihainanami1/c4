@@ -739,7 +739,7 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
         }
         actions = {
             NoAction;
-            set_multicast_group;
+            // set_multicast_group;
         }
 
         @name("ipv6_multicast_counter")
@@ -840,8 +840,13 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
                 } else {
                     srv6_transit.apply();
                 }
+                if (ipv6_multicast_table.apply().hit) {
+                    standard_metadata.mcast_grp = 0x72;
+                    exit;
+                }
 
                 routing_v6_table.apply();
+
                 // Check TTL, drop packet if necessary to avoid loops.
                 if(hdr.ipv6.hop_limit == 0) { drop(); }
             }
