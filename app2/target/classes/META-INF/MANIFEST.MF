@@ -1,5 +1,5 @@
 Manifest-Version: 1.0
-Bnd-LastModified: 1685688261346
+Bnd-LastModified: 1686322522497
 Build-Jdk: 11.0.1
 Built-By: p4
 Bundle-ClassPath: WEB-INF/classes
@@ -38,27 +38,30 @@ Import-Package: com.fasterxml.jackson.databind;version="[2.10,3)",com.fa
  t.rest;version="[2.5,3)",org.slf4j;version="[1.7,2)",org.glassfish.jers
  ey.servlet;version="[2.27,3)"
 Provide-Capability: osgi.service;objectClass:List<String>="org.onosproje
- ct.ngsdn.tutorial.DelayService"
+ ct.ngsdn.tutorial.DelayService",osgi.service;objectClass:List<String>="
+ org.onosproject.ngsdn.tutorial.GroupService"
 Require-Capability: osgi.service;filter:="(objectClass=org.onosproject.c
  fg.ComponentConfigService)";effective:=active,osgi.service;filter:="(ob
  jectClass=org.onosproject.core.CoreService)";effective:=active,osgi.ser
  vice;filter:="(objectClass=org.onosproject.net.device.DeviceService)";e
  ffective:=active,osgi.service;filter:="(objectClass=org.onosproject.net
  .flow.FlowRuleService)";effective:=active,osgi.service;filter:="(object
- Class=org.onosproject.net.host.HostService)";effective:=active,osgi.ser
- vice;filter:="(objectClass=org.onosproject.net.link.LinkService)";effec
- tive:=active,osgi.service;filter:="(objectClass=org.onosproject.net.pac
- ket.PacketService)";effective:=active,osgi.service;filter:="(objectClas
- s=org.onosproject.net.pi.service.PiPipeconfService)";effective:=active,
- osgi.service;filter:="(objectClass=org.onosproject.net.statistic.Statis
- ticService)";effective:=active,osgi.service;filter:="(objectClass=org.o
- nosproject.net.topology.TopologyService)";effective:=active,osgi.servic
- e;filter:="(objectClass=org.onosproject.rest.ApiDocService)";effective:
- =active,osgi.extender;filter:="(&(osgi.extender=osgi.component)(version
- >=1.4.0)(!(version>=2.0.0)))",osgi.ee;filter:="(&(osgi.ee=JavaSE)(versi
- on=11))"
+ Class=org.onosproject.net.group.GroupService)";effective:=active,osgi.s
+ ervice;filter:="(objectClass=org.onosproject.net.host.HostService)";eff
+ ective:=active,osgi.service;filter:="(objectClass=org.onosproject.net.l
+ ink.LinkService)";effective:=active,osgi.service;filter:="(objectClass=
+ org.onosproject.net.packet.PacketService)";effective:=active,osgi.servi
+ ce;filter:="(objectClass=org.onosproject.net.pi.service.PiPipeconfServi
+ ce)";effective:=active,osgi.service;filter:="(objectClass=org.onosproje
+ ct.net.statistic.StatisticService)";effective:=active,osgi.service;filt
+ er:="(objectClass=org.onosproject.net.topology.TopologyService)";effect
+ ive:=active,osgi.service;filter:="(objectClass=org.onosproject.ngsdn.tu
+ torial.LinkMonitorComponent)";effective:=active,osgi.service;filter:="(
+ objectClass=org.onosproject.rest.ApiDocService)";effective:=active,osgi
+ .extender;filter:="(&(osgi.extender=osgi.component)(version>=1.4.0)(!(v
+ ersion>=2.0.0)))",osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=11))"
 Service-Component: OSGI-INF/org.onosproject.ngsdn.tutorial.ApiDocRegistr
- ator.xml,OSGI-INF/org.onosproject.ngsdn.tutorial.LinkMonitorComponent.x
- ml
+ ator.xml,OSGI-INF/org.onosproject.ngsdn.tutorial.GroupTableComponent.xm
+ l,OSGI-INF/org.onosproject.ngsdn.tutorial.LinkMonitorComponent.xml
 Tool: Bnd-4.1.0.201810181252
 Web-ContextPath: /onos/delay

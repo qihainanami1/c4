@@ -733,6 +733,19 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
         counters = direct_counter(CounterType.packets_and_bytes);
     }
 
+    table ipv6_multicast_table {
+        key = {
+            hdr.ipv6.dst_addr: exact;
+        }
+        actions = {
+            NoAction;
+            set_multicast_group;
+        }
+
+        @name("ipv6_multicast_counter")
+        counters = direct_counter(CounterType.packets_and_bytes);
+    }
+
     apply {
 
         // limit throughput before doing l2_l3_forward

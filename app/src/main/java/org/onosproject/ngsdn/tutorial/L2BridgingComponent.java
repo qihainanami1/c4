@@ -57,6 +57,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import p4.v1.P4RuntimeOuterClass;
 
+import java.net.Inet6Address;
+import java.net.UnknownHostException;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -76,6 +78,7 @@ public class L2BridgingComponent {
     private final Logger log = LoggerFactory.getLogger(getClass());
     private static final int DEFAULT_BROADCAST_GROUP_ID = 255;
     private static final int MY_NEIGH_SWITCHES_GROUP_ID = 254;
+    private static final int SUBNET_GROUP_ID_1 = 114;
 
     private final DeviceListener deviceListener = new InternalDeviceListener();
     private final HostListener hostListener = new InternalHostListener();
@@ -165,6 +168,7 @@ public class L2BridgingComponent {
         }
         insertMulticastGroup(deviceId);
         insertMulticastFlowRules(deviceId);
+        mapIpv6DstAddrToMulticast(deviceId);
         // Uncomment the following line after you have implemented the method:
         // insertUnmatchedBridgingFlowRule(deviceId);
     }
@@ -320,7 +324,7 @@ public class L2BridgingComponent {
         ).build();
 
         final PiAction filterAction = PiAction.builder()
-                .withId(PiActionId.of("IngressPipeImpl.NoAction")).build();
+                .withId(PiActionId.of("NoAction")).build();
         final FlowRule rule6 = Utils.buildFlowRule(
                 deviceId, appId, "IngressPipeImpl.m_filter",
                 filterMatch, filterAction
@@ -331,14 +335,47 @@ public class L2BridgingComponent {
                 .withMeterBand(new PiMeterBand(102400, 1057600))
                 .build();
 
-
-
-
-
-
         // Insert rules.
         flowRuleService.applyFlowRules(rule1, rule2, rule5, rule6);
     }
+
+    // TODO: SRv6 multicast
+    // create a p4-table, mapping a ipv6_dst_addr to a mcast_grp before 3-layer v6 forward
+
+    private void mapIpv6DstAddrToMulticast(DeviceId deviceId) {
+        // Action: set multicast group id
+
+        String ipv6Address = "2001:f:f::1";
+        byte[] byteArray = null;
+        try {
+            byteArray = Inet6Address.getByName(ipv6Address).getAddress();
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        }
+
+        final PiCriterion ipv6BroadcastCriterion = PiCriterion.builder()
+                .matchExact(
+                        PiMatchFieldId.of("hdr.ipv6.dst_addr"),
+                        byteArray
+                )
+                .build();
+
+        final PiAction setMcastGroupAction = PiAction.builder()
+                .withId(PiActionId.of("IngressPipeImpl.set_multicast_group"))
+                .withParameter(new PiActionParam(
+                        PiActionParamId.of("gid"),
+                        SUBNET_GROUP_ID_1))
+                .build();
+
+        String tableId = "IngressPipeImpl.ipv6_multicast_table";
+        final FlowRule rule = Utils.buildFlowRule(
+                deviceId, appId, tableId, ipv6BroadcastCriterion
+                , setMcastGroupAction);
+
+
+        flowRuleService.applyFlowRules(rule);
+    }
+
 
     /**
      * Insert flow rule that matches all unmatched ethernet traffic. This

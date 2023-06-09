@@ -174,16 +174,12 @@ public class LinkMonitorComponent implements DelayService {
         return average / latencyAverageSize;
     }
 
-    //
-//
-//    // 获取所有链路时延
     public Map<Link, Integer> getAllLinkDelays() {
         Map<Link, Integer> averageResult = new HashMap<>();
         linkLatencies.forEach(
                 (link, records) -> {
                     int sum = 0;
                     for (int record : records) sum += record;
-                    // 求平均值
                     averageResult.put(link, sum / latencyAverageSize);
                 }
         );
@@ -199,12 +195,9 @@ public class LinkMonitorComponent implements DelayService {
 
 
         @Override
-        @SuppressWarnings("beta")
         public void run() {
-            // 间隔一段时间就执行一次 时延探测任务
             while (toRun) {
                 log.debug("send packet out to data plane network");
-                // 遍历所有 可用设备
                 for (Device device : deviceService.getAvailableDevices()) {
                     DeviceId deviceId = device.id();
 
@@ -222,21 +215,16 @@ public class LinkMonitorComponent implements DelayService {
                             deviceId, appId, "IngressPipeImpl.acl_table",
                             aclCriterion, aclAction);
                     flowRuleService.applyFlowRules(rule4);
-                    // 构造两个treatment对象，treatment用于指导一个流表的action，也就是收到了流表后，openflow switch的行为
-
-                    // 收到这个流表的交换机，将发起广播报文
                     TrafficTreatment treatmentAll =
                             DefaultTrafficTreatment.builder().setOutput(PortNumber.portNumber(233)).build();
 
-                    // 收到这个流表的交换机，将把报文转发给控制器
                     TrafficTreatment treatmentController =
                             DefaultTrafficTreatment.builder().setOutput(PortNumber.portNumber(255)).build();
 
-                    // 构造PDU，并封装为以太网帧。注意，以太网帧为SDN网络里传输的基本单位。
                     Ethernet ethernet = new Ethernet();
-                    ethernet.setSourceMACAddress(PROBE_SRC); // 源MAC无意义，随便设置就行
-                    ethernet.setDestinationMACAddress(PROBE_DST); // 广播包
-                    ethernet.setEtherType(PROBE_ETH); // 我们随机生成的一个代表广播包类型的16位数字。
+                    ethernet.setSourceMACAddress(PROBE_SRC);
+                    ethernet.setDestinationMACAddress(PROBE_DST);
+                    ethernet.setEtherType(PROBE_ETH);
 
                     PDU payload = new PDU(deviceId.toString(), System.currentTimeMillis());
                     ethernet.setPayload(payload);
@@ -625,7 +613,6 @@ public class LinkMonitorComponent implements DelayService {
         cancelPushPacket();
 
         packetService.removeProcessor(linkProbeReceiver);
-        log.info("应用关闭...");
     }
 
 }
