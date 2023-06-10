@@ -429,19 +429,6 @@ public class LinkMonitorComponent implements DelayService {
         }
     }
 
-    @Override
-    public HostId map(String hostAlias) {
-        String PREFIX = "00:00:00:00:00:";
-        String SUFFIX = "/None";
-        if (hostAlias.length() == 2) {
-            char c = hostAlias.toCharArray()[1];
-            return HostId.hostId(PREFIX + c + '0' + SUFFIX);
-        } else {
-            String s = hostAlias.substring(1);
-            return HostId.hostId(PREFIX + s + SUFFIX);
-        }
-    }
-
     private Map<Link, Integer> linkDelays;
 
 //    private void getAllECMPPath() {

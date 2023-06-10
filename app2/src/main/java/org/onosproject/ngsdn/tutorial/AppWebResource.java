@@ -17,6 +17,7 @@ package org.onosproject.ngsdn.tutorial;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.onosproject.net.Link;
+import org.onosproject.ngsdn.tutorial.common.Utils;
 import org.onosproject.rest.AbstractWebResource;
 
 import javax.ws.rs.GET;
@@ -67,7 +68,7 @@ public class AppWebResource extends AbstractWebResource {
     ) {
         ObjectNode node = mapper().createObjectNode();
 
-        Map<org.onosproject.net.Path ,Integer> res = delayService.getAllECMPPath(delayService.map(h1), delayService.map(h2));
+        Map<org.onosproject.net.Path ,Integer> res = delayService.getAllECMPPath(Utils.map(h1), Utils.map(h2));
         for (Map.Entry<org.onosproject.net.Path, Integer> entry : res.entrySet()) {
             node.put(String.valueOf(entry.getKey()), entry.getValue());
         }

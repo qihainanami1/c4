@@ -19,6 +19,7 @@ package org.onosproject.ngsdn.tutorial.common;
 import org.onlab.packet.MacAddress;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.net.DeviceId;
+import org.onosproject.net.HostId;
 import org.onosproject.net.PortNumber;
 import org.onosproject.net.behaviour.MeterQuery;
 import org.onosproject.net.flow.DefaultFlowRule;
@@ -58,6 +59,18 @@ import static org.onosproject.ngsdn.tutorial.AppConstants.DEFAULT_FLOW_RULE_PRIO
 public final class Utils {
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
+
+    public static HostId map(String hostAlias) {
+        String PREFIX = "00:00:00:00:00:";
+        String SUFFIX = "/None";
+        if (hostAlias.length() == 2) {
+            char c = hostAlias.toCharArray()[1];
+            return HostId.hostId(PREFIX + c + '0' + SUFFIX);
+        } else {
+            String s = hostAlias.substring(1);
+            return HostId.hostId(PREFIX + s + SUFFIX);
+        }
+    }
 
     public static GroupDescription buildMulticastGroup(
             ApplicationId appId,

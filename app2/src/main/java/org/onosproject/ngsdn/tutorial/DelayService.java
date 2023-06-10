@@ -15,8 +15,6 @@ public interface DelayService {
 
     Map<Path, Integer> getAllECMPPath(HostId src, HostId dst);
 
-    HostId map(String hostAlias);
-
     Integer getFromLinkDelays(Link link);
 
     Integer getFromLinkDelays(String swID1, String swID2);

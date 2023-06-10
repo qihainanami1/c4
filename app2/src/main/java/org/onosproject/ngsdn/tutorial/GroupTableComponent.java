@@ -1,5 +1,6 @@
 package org.onosproject.ngsdn.tutorial;
 
+import jdk.jshell.execution.Util;
 import org.apache.commons.collections.bag.HashBag;
 import org.onlab.packet.IPv6;
 import org.onlab.packet.MacAddress;
@@ -31,13 +32,14 @@ import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.onosproject.ngsdn.tutorial.AppConstants.INITIAL_SETUP_DELAY;
 
 @Component(immediate = true,
         service = {GroupService.class},
-        enabled = false)
+        enabled = true)
 public class GroupTableComponent implements GroupService {
 
     private final Logger log = LoggerFactory.getLogger(getClass());
@@ -60,8 +62,6 @@ public class GroupTableComponent implements GroupService {
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     protected CoreService coreService;
 
-    @Reference(cardinality = ReferenceCardinality.MANDATORY)
-    protected LinkMonitorComponent linkMonitorComponent;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private FlowRuleService flowRuleService;
@@ -78,11 +78,22 @@ public class GroupTableComponent implements GroupService {
     ConcurrentHashMap<String, GroupDescription> groupDescriptionMap = new ConcurrentHashMap<>();
     ConcurrentHashMap<String, Collection<PortNumber>> groupPortNumbersMap = new ConcurrentHashMap<>();
 
+    @Override
+    public Set<Host> getGroupInfo(String gname) {
+        GroupDescription groupDescription = groupDescriptionMap.get(gname);
+        DeviceId deviceId = groupDescription.deviceId();
+        Collection<PortNumber> portNumbers = groupPortNumbersMap.get(gname);
+        Set<Host> ret = new HashSet<>();
+        for (PortNumber portNumber : portNumbers) {
+            ConnectPoint connectPoint = new ConnectPoint(deviceId, portNumber);
+            Set<Host> hosts = hostService.getConnectedHosts(connectPoint);
+            ret.addAll(hosts);
+        }
+        return ret;
+    }
 
     @Activate
     protected void activate() {
-        log.error("???");
-        System.out.println("???");
         groupNameIndexMap.put("group1", SUBNET_GROUP_ID_1);
         groupNameIndexMap.put("group2", SUBNET_GROUP_ID_2);
         groupNameIndexMap.put("group3", SUBNET_GROUP_ID_3);
@@ -94,11 +105,12 @@ public class GroupTableComponent implements GroupService {
         // TODO: detect when a user verified by login, and a host add event issue
         // hostService.addListener(hostListener);
 
-        mapIpv6DstAddrToMulticast(DeviceId.deviceId("device:leaf2"));
+        // mapIpv6DstAddrToMulticast(DeviceId.deviceId("device:leaf2"));
 
     }
 
-    void insertNewPortNumber(DeviceId deviceId, String groupName, PortNumber newPort) {
+    @Override
+    public void insertNewPortNumber(DeviceId deviceId, String groupName, PortNumber newPort) {
         // if exists, group it first
         GroupDescription groupDesc = groupDescriptionMap.get(groupName);
         Collection<PortNumber> portNumbers = new HashSet<>();
@@ -109,15 +121,18 @@ public class GroupTableComponent implements GroupService {
         }
 
         portNumbers.add(newPort);
-
+        // log.error("{}, {}, {}", deviceId, groupName, newPort);
         final GroupDescription multicastGroup = Utils.buildMulticastGroup(
                 appId, deviceId, groupNameIndexMap.get(groupName), portNumbers);
 
         groupDescriptionMap.put(groupName, multicastGroup);
         groupPortNumbersMap.put(groupName, portNumbers);
+
+        groupService.addGroup(multicastGroup);
     }
 
-    void removePortNumber(DeviceId deviceId, String groupName, PortNumber newPort) {
+    @Override
+    public void removePortNumber(DeviceId deviceId, String groupName, PortNumber newPort) {
         // if exists, group it first
         GroupDescription groupDesc = groupDescriptionMap.get(groupName);
         Collection<PortNumber> portNumbers = new HashSet<>();
@@ -134,9 +149,12 @@ public class GroupTableComponent implements GroupService {
 
         groupDescriptionMap.put(groupName, multicastGroup);
         groupPortNumbersMap.put(groupName, portNumbers);
+        groupService.addGroup(multicastGroup);
+
     }
 
-    void removeGroup(String deviceId, String groupName) {
+    @Override
+    public void removeGroup(String deviceId, String groupName) {
         GroupDescription groupDesc = groupDescriptionMap.get(groupName);
         if (groupDesc == null) {
             return;
@@ -152,9 +170,10 @@ public class GroupTableComponent implements GroupService {
         return true;
     }
 
+    @Override
     // assume h3 and h4 for broadcast domain Group1
-    void addHostToGroup(String hostname, String groupName) {
-        HostId hostId = linkMonitorComponent.map(hostname);
+    public void addHostToGroup(String hostname, String groupName) {
+        HostId hostId = Utils.map(hostname);
         Host host = hostService.getHost(hostId);
 
         // get host location(device-port connect to this host directly)
@@ -163,8 +182,9 @@ public class GroupTableComponent implements GroupService {
         insertNewPortNumber(location.deviceId(), groupName, location.port());
     }
 
-    void removeHostInGroup(String hostname, String groupName) {
-        HostId hostId = linkMonitorComponent.map(hostname);
+    @Override
+    public void removeHostInGroup(String hostname, String groupName) {
+        HostId hostId = Utils.map(hostname);
         Host host = hostService.getHost(hostId);
 
         // get host location(device-port connect to this host directly)
@@ -176,6 +196,7 @@ public class GroupTableComponent implements GroupService {
     // TODO: SRv6 multicast
     // create a p4-table, mapping a ipv6_dst_addr to a mcast_grp before 3-layer v6 forward
 
+    @Deprecated
     private void mapIpv6DstAddrToMulticast(DeviceId deviceId) {
         // Action: set multicast group id
 

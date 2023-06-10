@@ -344,9 +344,9 @@ public class L2BridgingComponent {
 
     private void mapIpv6DstAddrToMulticast(DeviceId deviceId) {
         // Action: set multicast group id
-        Set<PortNumber> ports = getHostFacingPorts(deviceId);
-        GroupDescription groupDescription = Utils.buildMulticastGroup(appId, deviceId, SUBNET_GROUP_ID_1, ports);
-        groupService.addGroup(groupDescription);
+        // Set<PortNumber> ports = getHostFacingPorts(deviceId);
+        // GroupDescription groupDescription = Utils.buildMulticastGroup(appId, deviceId, SUBNET_GROUP_ID_1, ports);
+        // groupService.addGroup(groupDescription);
 
         String ipv6Address = "2001:f:f::1";
         byte[] byteArray = null;
