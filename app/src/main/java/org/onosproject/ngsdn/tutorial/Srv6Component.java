@@ -17,6 +17,7 @@ package org.onosproject.ngsdn.tutorial;
 
 import com.google.common.collect.Lists;
 import org.onlab.packet.Ip6Address;
+import org.onlab.packet.IpAddress;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.mastership.MastershipService;
 import org.onosproject.net.Device;
@@ -46,10 +47,13 @@ import org.onosproject.ngsdn.tutorial.common.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.google.common.collect.Streams.stream;
+import static org.onosproject.net.device.DeviceEvent.Type.PORT_UPDATED;
 import static org.onosproject.ngsdn.tutorial.AppConstants.INITIAL_SETUP_DELAY;
 
 /**
@@ -101,6 +105,7 @@ public class Srv6Component {
 
     @Activate
     protected void activate() {
+
         appId = mainComponent.getAppId();
 
         // Register listeners to be informed about device and host events.
@@ -241,9 +246,13 @@ public class Srv6Component {
 
     /**
      * Listener of device events.
+     * srv6-insert device:leaf1 3:201:2:: 3:102:2:: 2001:f:f::1
      */
     public class InternalDeviceListener implements DeviceListener {
 
+        // Method provided by EventFilter to select only interesting events
+        // this is multiplexing: input is gather as one event(subscribe)
+        // and handler is scatter it to individual event
         @Override
         public boolean isRelevant(DeviceEvent event) {
             switch (event.type()) {
@@ -261,6 +270,7 @@ public class Srv6Component {
 
         @Override
         public void event(DeviceEvent event) {
+
             final DeviceId deviceId = event.subject().id();
             if (deviceService.isAvailable(deviceId)) {
                 // A P4Runtime device is considered available in ONOS when there

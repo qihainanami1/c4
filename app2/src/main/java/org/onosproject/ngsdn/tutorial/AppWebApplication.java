@@ -27,7 +27,8 @@ public class AppWebApplication extends AbstractWebApplication {
     @Override
     public Set<Class<?>> getClasses() {
         return getClasses(AppWebResource.class,
-                AppGroupsWebResource.class
+                AppGroupsWebResource.class,
+                AppMockECMPWebResource.class
                 );
     }
 }

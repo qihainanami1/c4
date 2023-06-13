@@ -59,6 +59,7 @@ import p4.v1.P4RuntimeOuterClass;
 
 import java.net.Inet6Address;
 import java.net.UnknownHostException;
+import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -113,12 +114,12 @@ public class L2BridgingComponent {
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private GroupService groupService;
 
+
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private MastershipService mastershipService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private MainComponent mainComponent;
-
 
 
     //--------------------------------------------------------------------------
@@ -139,6 +140,22 @@ public class L2BridgingComponent {
         mainComponent.scheduleTask(this::setUpAllDevices, INITIAL_SETUP_DELAY);
 
         log.info("Started");
+
+
+    }
+
+    private void meterTest(DeviceId deviceId) {
+        MeterId meterId = meterService.allocateMeterId(deviceId);
+
+        Band band = DefaultBand.builder().burstSize(1024).withRate(200)
+                .ofType(Band.Type.DROP).build();
+        MeterRequest mr = DefaultMeterRequest.builder()
+                .forDevice(deviceId)
+                .fromApp(appId)
+                .withUnit(Meter.Unit.KB_PER_SEC)
+                .withBands(Collections.singleton(band))
+                .add();
+        Meter submit = meterService.submit(mr);
 
     }
 
@@ -169,6 +186,7 @@ public class L2BridgingComponent {
         insertMulticastGroup(deviceId);
         insertMulticastFlowRules(deviceId);
         mapIpv6DstAddrToMulticast(deviceId);
+//        meterTest(deviceId);
         // Uncomment the following line after you have implemented the method:
         // insertUnmatchedBridgingFlowRule(deviceId);
     }
@@ -305,14 +323,14 @@ public class L2BridgingComponent {
 
         final PiCriterion limitMatch = PiCriterion.builder().matchExact(
                 PiMatchFieldId.of("standard_metadata.ingress_port"),
-                        3
+                3
         ).build();
         final PiAction limitAction = PiAction.builder()
                 .withId(PiActionId.of("IngressPipeImpl.m_action"))
-                        .withParameter(new PiActionParam(
-                                PiActionParamId.of("meter_index"),
-                                0
-                        )).build();
+                .withParameter(new PiActionParam(
+                        PiActionParamId.of("meter_index"),
+                        1
+                )).build();
         final FlowRule rule5 = Utils.buildFlowRule(
                 deviceId, appId, "IngressPipeImpl.m_read",
                 limitMatch, limitAction
