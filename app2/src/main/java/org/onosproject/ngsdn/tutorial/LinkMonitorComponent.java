@@ -90,7 +90,6 @@ import java.util.concurrent.*;
 )
 public class LinkMonitorComponent implements DelayService {
 
-
     private final Logger log = LoggerFactory.getLogger(getClass());
 
     private static final String PROBE_SPILT = ";";
@@ -307,24 +306,13 @@ public class LinkMonitorComponent implements DelayService {
             ByteBuffer unparsed = pkt.unparsed();
             short etherType = unparsed.getShort(14);// getByteBuffer[14], get 2 bytes as a short
             if (etherType == 0x0812) {
-
-                // 9bit ingress_port (PortNumber)
-                // 7bit padding
-                // amend it
-                // packet_in by amending
                 byte[] cpuInHeader = new byte[2];
-                // read 16 bits
-                // FUCK: cpu_in header is 16bits not 16bytes
                 rawData.get(cpuInHeader);
                 System.out.println("get cpuInHeader ==> " + Arrays.toString(cpuInHeader));
-                // 解析 cpu_in 头部获取 in_port
                 int inPort = ((cpuInHeader[0] & 0xFF) << 1) | ((cpuInHeader[1] >> 7) & 0x01);
 
-
-                // 读取数据帧部分
                 byte[] ethernetFrame = new byte[rawData.remaining()];
                 rawData.get(ethernetFrame);
-                // System.out.println("parsing...: "+ Arrays.toString(ethernetFrame));
                 try {
                     packet = Ethernet.deserializer().deserialize(
                             ethernetFrame, 0, ethernetFrame.length
@@ -335,11 +323,7 @@ public class LinkMonitorComponent implements DelayService {
                 System.out.println("get BiasPacket_in: ==> " + packet + ", and in_port=" + pkt.receivedFrom().port());
                 System.out.println("from where ==> " + pkt.receivedFrom() + " and payload is : " + new String(packet.getPayload().serialize(), StandardCharsets.US_ASCII));
 
-                if (packet.getEtherType() == PROBE_ETH) {
-                }
-            } else {
-                // System.out.println("get packet_in: ==> " + pkt + ", and in_port=" + pkt.receivedFrom().port());
-                // System.out.println("from where ==> " + pkt.receivedFrom() +  " and payload is : " + new String(packet.getPayload().serialize(), StandardCharsets.US_ASCII));
+                packet.getEtherType();
             }
 
 
@@ -374,7 +358,6 @@ public class LinkMonitorComponent implements DelayService {
                     }
                 }
             }
-            // 不传给pipeline的下一个processor了，直接结束对packet in的处理
             context.block();
         }
     }

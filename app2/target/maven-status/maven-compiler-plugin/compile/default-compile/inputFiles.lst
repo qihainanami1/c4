@@ -3,11 +3,9 @@
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/PDU.java
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/AppWebApplication.java
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/AppConstants.java
-/home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/Srv6InsertComponentService.java
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/common/Utils.java
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/AppGroupsWebResource.java
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/DelayService.java
-/home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/Srv6InsertComponent.java
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/LinkMonitorComponent.java
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/GroupTableComponent.java
 /home/p4/ngsdn-tutorial/app2/src/main/java/org/onosproject/ngsdn/tutorial/package-info.java

@@ -18,4 +18,6 @@ public interface GroupService {
     void removePortNumber(DeviceId deviceId, String groupName, PortNumber newPort);
 
     Set<Host> getGroupInfo(String gname);
+
+    void mockUpdateECMPPath();
 }

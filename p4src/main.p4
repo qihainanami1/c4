@@ -36,6 +36,18 @@
 // Required for Exercise 7.
 #define SRV6_MAX_HOPS 4
 
+/* CONSTANTS */
+#define NUM_PORTS 6
+#define NUM_BATCHES 2
+
+#define REGISTER_SIZE_TOTAL 6144 //256
+#define REGISTER_BATCH_SIZE REGISTER_SIZE_TOTAL/NUM_BATCHES
+#define REGISTER_PORT_SIZE REGISTER_BATCH_SIZE/NUM_PORTS
+
+#define REGISTER_CELL_WIDTH 128
+
+#define LOSS_CHANGE_OF_BATCH 0x1234
+
 typedef bit<9>   port_num_t;
 typedef bit<48>  mac_addr_t;
 typedef bit<16>  mcast_group_id_t;
@@ -52,6 +64,7 @@ const bit<8> IP_PROTO_TCP    = 6;
 const bit<8> IP_PROTO_UDP    = 17;
 const bit<8> IP_PROTO_SRV6   = 43;
 const bit<8> IP_PROTO_ICMPV6 = 58;
+const bit<8> TYPE_LOSS = 0xFC;
 
 const mac_addr_t IPV6_MCAST_01 = 0x33_33_00_00_00_01;
 
@@ -93,6 +106,13 @@ header ipv4_t {
     bit<16>  hdr_checksum;
     bit<32>  src_addr;
     bit<32>  dst_addr;
+}
+
+header loss_t {
+
+    bit<1> batch_id;
+    bit<7> padding; // to be able to add 2 bytes to the IP header length
+    bit<8> nextProtocol;
 }
 
 header ipv6_t {
@@ -165,6 +185,11 @@ header ndp_t {
     bit<48>      target_mac_addr;
 }
 
+// fill metadata in it
+header probe_t {
+
+}
+
 // Packet-in header. Prepended to packets sent to the CPU_PORT and used by the
 // P4Runtime server (Stratum) to populate the PacketIn message metadata fields.
 // Here we use it to carry the original ingress port where the packet was
@@ -194,6 +219,7 @@ struct parsed_headers_t {
     ipv6_t ipv6;
     srv6h_t srv6h;
     srv6_list_t[SRV6_MAX_HOPS] srv6_list;
+    loss_t loss;
     tcp_t tcp;
     udp_t udp;
     icmp_t icmp;
@@ -209,7 +235,26 @@ struct local_metadata_t {
     bit<8>      ip_proto;
     bit<8>      icmp_type;
     bit<9>      original_ingress_port;
+    bit<32> slice_id;
+    bit<32> priority;
 
+    bit<16> tmp_src_port;
+    bit<16> tmp_dst_port;
+    bit<16> um_h1;
+    bit<16> um_h2;
+    bit<16> um_h3;
+    bit<16> dm_h1;
+    bit<16> dm_h2;
+    bit<16> dm_h3;
+    bit<128> tmp_ip_src;
+    bit<128> tmp_ip_dst;
+    bit<128> tmp_ports_proto;
+    bit<128> tmp_counter;
+    bit<16> previous_batch_id;
+    bit<16> batch_id;
+    bit<16> last_local_batch_id;
+    bit<1> dont_execute_um;
+    bit<1> dont_execute_dm;
     bit<32> meter_tag;
 }
 
@@ -263,10 +308,20 @@ parser ParserImpl (packet_in packet,
             IP_PROTO_UDP: parse_udp;
             IP_PROTO_ICMPV6: parse_icmpv6;
             IP_PROTO_SRV6: parse_srv6;
+            TYPE_LOSS: parse_loss;
             default: accept;
         }
     }
-
+    
+    state parse_loss {
+        packet.extract(hdr.loss);
+        transition select(hdr.loss.nextProtocol){
+            IP_PROTO_TCP : parse_tcp;
+            IP_PROTO_UDP : parse_udp;
+            default: accept;
+        }
+    }
+    
     state parse_tcp {
         packet.extract(hdr.tcp);
         local_metadata.l4_src_port = hdr.tcp.src_port;
@@ -354,27 +409,246 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
                          inout local_metadata_t    local_metadata,
                          inout standard_metadata_t standard_metadata) {
 
+    register<bit<16>>(1) last_batch_id;
+
+    // 128 + 128 + 48 = 304
+    register<bit<REGISTER_CELL_WIDTH>>(REGISTER_SIZE_TOTAL) um_ip_src;
+    register<bit<REGISTER_CELL_WIDTH>>(REGISTER_SIZE_TOTAL) um_ip_dst;
+    register<bit<REGISTER_CELL_WIDTH>>(REGISTER_SIZE_TOTAL) um_ports_proto; // 16 + 16 + 16 = 48
+    register<bit<REGISTER_CELL_WIDTH>>(REGISTER_SIZE_TOTAL) um_counter;
+
+    register<bit<REGISTER_CELL_WIDTH>>(REGISTER_SIZE_TOTAL) dm_ip_src;
+    register<bit<REGISTER_CELL_WIDTH>>(REGISTER_SIZE_TOTAL) dm_ip_dst;
+    register<bit<REGISTER_CELL_WIDTH>>(REGISTER_SIZE_TOTAL) dm_ports_proto;
+    register<bit<REGISTER_CELL_WIDTH>>(REGISTER_SIZE_TOTAL) dm_counter;
+
+    action compute_hash_indexes(){
+
+         // Compute hash indexes for upstream meter
+        hash(local_metadata.um_h1, HashAlgorithm.crc32_custom, ((local_metadata.batch_id * REGISTER_BATCH_SIZE) + ((((bit<16>)standard_metadata.egress_spec-1)*REGISTER_PORT_SIZE))), {hdr.ipv6.src_addr,  hdr.ipv6.dst_addr,
+         local_metadata.tmp_src_port, local_metadata.tmp_dst_port, hdr.loss.nextProtocol}, (bit<16>)REGISTER_PORT_SIZE);
+        hash(local_metadata.um_h2, HashAlgorithm.crc32_custom, ((local_metadata.batch_id * REGISTER_BATCH_SIZE) + ((((bit<16>)standard_metadata.egress_spec-1)*REGISTER_PORT_SIZE))), {hdr.ipv6.src_addr,  hdr.ipv6.dst_addr,
+         local_metadata.tmp_src_port, local_metadata.tmp_dst_port, hdr.loss.nextProtocol}, (bit<16>)REGISTER_PORT_SIZE);
+        hash(local_metadata.um_h3, HashAlgorithm.crc32_custom, ((local_metadata.batch_id * REGISTER_BATCH_SIZE) + ((((bit<16>)standard_metadata.egress_spec-1)*REGISTER_PORT_SIZE))), {hdr.ipv6.src_addr,  hdr.ipv6.dst_addr,
+         local_metadata.tmp_src_port, local_metadata.tmp_dst_port, hdr.loss.nextProtocol}, (bit<16>)REGISTER_PORT_SIZE);
+
+        // Compute hash indexes for downstream meter
+        hash(local_metadata.dm_h1, HashAlgorithm.crc32_custom, ((local_metadata.previous_batch_id * REGISTER_BATCH_SIZE) + ((((bit<16>)standard_metadata.ingress_port-1)*REGISTER_PORT_SIZE))), {hdr.ipv6.src_addr,  hdr.ipv6.dst_addr,
+         local_metadata.tmp_src_port, local_metadata.tmp_dst_port, hdr.loss.nextProtocol}, (bit<16>)REGISTER_PORT_SIZE);
+        hash(local_metadata.dm_h2, HashAlgorithm.crc32_custom, ((local_metadata.previous_batch_id * REGISTER_BATCH_SIZE) + ((((bit<16>)standard_metadata.ingress_port-1)*REGISTER_PORT_SIZE))), {hdr.ipv6.src_addr,  hdr.ipv6.dst_addr,
+         local_metadata.tmp_src_port, local_metadata.tmp_dst_port, hdr.loss.nextProtocol}, (bit<16>)REGISTER_PORT_SIZE);
+        hash(local_metadata.dm_h3, HashAlgorithm.crc32_custom, ((local_metadata.previous_batch_id * REGISTER_BATCH_SIZE) + ((((bit<16>)standard_metadata.ingress_port-1)*REGISTER_PORT_SIZE))), {hdr.ipv6.src_addr,  hdr.ipv6.dst_addr,
+         local_metadata.tmp_src_port, local_metadata.tmp_dst_port, hdr.loss.nextProtocol}, (bit<16>)REGISTER_PORT_SIZE);
+    }
+
+    action apply_um_meter(){
+
+        // ip src
+        //hash1
+        bit<128> tmp = hdr.ipv6.src_addr;
+        um_ip_src.read(local_metadata.tmp_ip_src, (bit<32>)local_metadata.um_h1);
+        local_metadata.tmp_ip_src = local_metadata.tmp_ip_src ^ (tmp);
+        um_ip_src.write((bit<32>)local_metadata.um_h1, local_metadata.tmp_ip_src);
+
+        //hash2
+        um_ip_src.read(local_metadata.tmp_ip_src, (bit<32>)local_metadata.um_h2);
+        local_metadata.tmp_ip_src = local_metadata.tmp_ip_src ^ (tmp);
+        um_ip_src.write((bit<32>)local_metadata.um_h2, local_metadata.tmp_ip_src);
+
+        //hash3
+        um_ip_src.read(local_metadata.tmp_ip_src, (bit<32>)local_metadata.um_h3);
+        local_metadata.tmp_ip_src = local_metadata.tmp_ip_src ^ (tmp);
+        um_ip_src.write((bit<32>)local_metadata.um_h3, local_metadata.tmp_ip_src);
+
+        // ip dst
+        tmp = hdr.ipv6.dst_addr;
+        um_ip_dst.read(local_metadata.tmp_ip_dst, (bit<32>)local_metadata.um_h1);
+        local_metadata.tmp_ip_dst = local_metadata.tmp_ip_dst ^ (tmp);
+        um_ip_dst.write((bit<32>)local_metadata.um_h1, local_metadata.tmp_ip_dst);
+
+        //hash2
+        um_ip_dst.read(local_metadata.tmp_ip_dst, (bit<32>)local_metadata.um_h2);
+        local_metadata.tmp_ip_dst = local_metadata.tmp_ip_dst ^ (tmp);
+        um_ip_dst.write((bit<32>)local_metadata.um_h2, local_metadata.tmp_ip_dst);
+
+        //hash3
+        um_ip_dst.read(local_metadata.tmp_ip_dst, (bit<32>)local_metadata.um_h3);
+        local_metadata.tmp_ip_dst = local_metadata.tmp_ip_dst ^ (tmp);
+        um_ip_dst.write((bit<32>)local_metadata.um_h3, local_metadata.tmp_ip_dst);
+
+        // misc fields
+        // hash1
+        tmp = (bit<128>)((bit<8>)0 ++ local_metadata.tmp_src_port ++ local_metadata.tmp_dst_port ++ hdr.loss.nextProtocol);
+        um_ports_proto.read(local_metadata.tmp_ports_proto, (bit<32>)local_metadata.um_h1);
+        local_metadata.tmp_ports_proto = local_metadata.tmp_ports_proto ^ (tmp);
+        um_ports_proto.write((bit<32>)local_metadata.um_h1, local_metadata.tmp_ports_proto);
+
+        //hash2
+        um_ports_proto.read(local_metadata.tmp_ports_proto, (bit<32>)local_metadata.um_h2);
+        local_metadata.tmp_ports_proto = local_metadata.tmp_ports_proto ^ (tmp);
+        um_ports_proto.write((bit<32>)local_metadata.um_h2, local_metadata.tmp_ports_proto);
+
+        //hash3
+        um_ports_proto.read(local_metadata.tmp_ports_proto, (bit<32>)local_metadata.um_h3);
+        local_metadata.tmp_ports_proto = local_metadata.tmp_ports_proto ^ (tmp);
+        um_ports_proto.write((bit<32>)local_metadata.um_h3, local_metadata.tmp_ports_proto);
+
+        // counter
+        //hash1
+        um_counter.read(local_metadata.tmp_counter, (bit<32>)local_metadata.um_h1);
+        local_metadata.tmp_counter = local_metadata.tmp_counter + 1;
+        um_counter.write((bit<32>)local_metadata.um_h1, local_metadata.tmp_counter);
+
+        //hash2
+        um_counter.read(local_metadata.tmp_counter, (bit<32>)local_metadata.um_h2);
+        local_metadata.tmp_counter = local_metadata.tmp_counter + 1;
+        um_counter.write((bit<32>)local_metadata.um_h2, local_metadata.tmp_counter);
+
+        //hash3
+        um_counter.read(local_metadata.tmp_counter, (bit<32>)local_metadata.um_h3);
+        local_metadata.tmp_counter = local_metadata.tmp_counter + 1;
+        um_counter.write((bit<32>)local_metadata.um_h3, local_metadata.tmp_counter);
+    }
+
+    action apply_dm_meter(){
+
+        // ip src
+        //hash1
+        bit<128> tmp = hdr.ipv6.src_addr;
+        dm_ip_src.read(local_metadata.tmp_ip_src, (bit<32>)local_metadata.dm_h1);
+        local_metadata.tmp_ip_src = local_metadata.tmp_ip_src ^ (tmp);
+        dm_ip_src.write((bit<32>)local_metadata.dm_h1, local_metadata.tmp_ip_src);
+
+        //hash2
+        dm_ip_src.read(local_metadata.tmp_ip_src, (bit<32>)local_metadata.dm_h2);
+        local_metadata.tmp_ip_src = local_metadata.tmp_ip_src ^ (tmp);
+        dm_ip_src.write((bit<32>)local_metadata.dm_h2, local_metadata.tmp_ip_src);
+
+        //hash3
+        dm_ip_src.read(local_metadata.tmp_ip_src, (bit<32>)local_metadata.dm_h3);
+        local_metadata.tmp_ip_src = local_metadata.tmp_ip_src ^ (tmp);
+        dm_ip_src.write((bit<32>)local_metadata.dm_h3, local_metadata.tmp_ip_src);
+
+        // ip dst
+        tmp = hdr.ipv6.dst_addr;
+        dm_ip_dst.read(local_metadata.tmp_ip_dst, (bit<32>)local_metadata.dm_h1);
+        local_metadata.tmp_ip_dst = local_metadata.tmp_ip_dst ^ (tmp);
+        dm_ip_dst.write((bit<32>)local_metadata.dm_h1, local_metadata.tmp_ip_dst);
+
+        //hash2
+        dm_ip_dst.read(local_metadata.tmp_ip_dst, (bit<32>)local_metadata.dm_h2);
+        local_metadata.tmp_ip_dst = local_metadata.tmp_ip_dst ^ (tmp);
+        dm_ip_dst.write((bit<32>)local_metadata.dm_h2, local_metadata.tmp_ip_dst);
+
+        //hash3
+        dm_ip_dst.read(local_metadata.tmp_ip_dst, (bit<32>)local_metadata.dm_h3);
+        local_metadata.tmp_ip_dst = local_metadata.tmp_ip_dst ^ (tmp);
+        dm_ip_dst.write((bit<32>)local_metadata.dm_h3, local_metadata.tmp_ip_dst);
+
+        // misc fields
+        //hash1
+        tmp = (bit<128>)((bit<8>)0 ++ local_metadata.tmp_src_port ++ local_metadata.tmp_dst_port ++ hdr.loss.nextProtocol);
+        dm_ports_proto.read(local_metadata.tmp_ports_proto, (bit<32>)local_metadata.dm_h1);
+        local_metadata.tmp_ports_proto = local_metadata.tmp_ports_proto ^ (tmp);
+        dm_ports_proto.write((bit<32>)local_metadata.dm_h1, local_metadata.tmp_ports_proto);
+
+        //hash2
+        dm_ports_proto.read(local_metadata.tmp_ports_proto, (bit<32>)local_metadata.dm_h2);
+        local_metadata.tmp_ports_proto = local_metadata.tmp_ports_proto ^ (tmp);
+        dm_ports_proto.write((bit<32>)local_metadata.dm_h2, local_metadata.tmp_ports_proto);
+
+        //hash3
+        dm_ports_proto.read(local_metadata.tmp_ports_proto, (bit<32>)local_metadata.dm_h3);
+        local_metadata.tmp_ports_proto = local_metadata.tmp_ports_proto ^ (tmp);
+        dm_ports_proto.write((bit<32>)local_metadata.dm_h3, local_metadata.tmp_ports_proto);
+
+        // counter
+        //hash1
+        dm_counter.read(local_metadata.tmp_counter, (bit<32>)local_metadata.dm_h1);
+        local_metadata.tmp_counter = local_metadata.tmp_counter + 1;
+        dm_counter.write((bit<32>)local_metadata.dm_h1, local_metadata.tmp_counter);
+
+        //hash2
+        dm_counter.read(local_metadata.tmp_counter, (bit<32>)local_metadata.dm_h2);
+        local_metadata.tmp_counter = local_metadata.tmp_counter + 1;
+        dm_counter.write((bit<32>)local_metadata.dm_h2, local_metadata.tmp_counter);
+
+        //hash3
+        dm_counter.read(local_metadata.tmp_counter, (bit<32>)local_metadata.dm_h3);
+        local_metadata.tmp_counter = local_metadata.tmp_counter + 1;
+        dm_counter.write((bit<32>)local_metadata.dm_h3, local_metadata.tmp_counter);
+
+    }
+
+    action remove_header (){
+        bit<8> protocol = hdr.loss.nextProtocol;
+        hdr.loss.setInvalid();
+        hdr.ipv6.next_hdr = protocol;
+        hdr.ipv6.payload_len = hdr.ipv6.payload_len - 2;
+        local_metadata.dont_execute_um = 1;
+    }
+
+    table remove_loss_header {
+        key = {
+            standard_metadata.egress_spec: exact;
+        }
+
+        actions = {
+            remove_header;
+            NoAction;
+        }
+        size=64;
+        default_action = NoAction;
+    }
+
    meter(32w16384, MeterType.bytes) my_meter;
 
    action drop() {
        mark_to_drop(standard_metadata);
    }
 
+   // set color
    action m_action(bit<32> meter_index) {
        my_meter.execute_meter<bit<32>>(meter_index, local_metadata.meter_tag);
    }
 
 
-   table m_read {
+   action set_slice_id(bit<32> slice_id) {
+        local_metadata.slice_id = slice_id;
+   }
+
+   table m_classify {
        key = {
-           standard_metadata.ingress_port: exact;
+           hdr.ipv6.src_addr: exact;
+           hdr.ipv6.dst_addr: exact;
+           local_metadata.l4_src_port: exact;
+           local_metadata.l4_dst_port: exact;
+           hdr.ipv6.next_hdr: exact;
        }
        actions = {
-           m_action;
-           NoAction;
+           set_slice_id;
        }
        default_action = NoAction;
-       size = 16384;
+       size = 2048;
+   }
+
+   table m_read {
+        key = {
+            local_metadata.slice_id: exact;
+        }
+        actions = {
+            // set_color
+            m_action;
+            // set_uncolored
+            NoAction;
+        }
+        default_action = NoAction;
+        size = 16384;
+
+   }
+
+   action set_priority(bit<32> pri) {
+        local_metadata.priority = pri;
    }
 
    table m_filter {
@@ -382,39 +656,12 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
            local_metadata.meter_tag: exact;
        }
        actions = {
+           set_priority;
            drop;
-           NoAction;
        }
        default_action = drop;
        size = 16;
    }
-
-    // *** L2 BRIDGING
-    //
-    // Here we define tables to forward packets based on their Ethernet
-    // destination address. There are two types of L2 entries that we
-    // need to support:
-    //
-    // 1. Unicast entries: which will be filled in by the control plane when the
-    //    location (port) of new hosts is learned.
-    // 2. Broadcast/multicast entries: used replicate NDP Neighbor Solicitation
-    //    (NS) messages to all host-facing ports;
-    //
-    // For (2), unlike ARP messages in IPv4 which are broadcasted to Ethernet
-    // destination address FF:FF:FF:FF:FF:FF, NDP messages are sent to special
-    // Ethernet addresses specified by RFC2464. These addresses are prefixed
-    // with 33:33 and the last four octets are the last four octets of the IPv6
-    // destination multicast address. The most straightforward way of matching
-    // on such IPv6 broadcast/multicast packets, without digging in the details
-    // of RFC2464, is to use a ternary match on 33:33:**:**:**:**, where * means
-    // "don't care".
-    //
-    // For this reason, our solution defines two tables. One that matches in an
-    // exact fashion (easier to scale on switch ASIC memory) and one that uses
-    // ternary matching (which requires more expensive TCAM memories, usually
-    // much smaller).
-
-    // --- l2_exact_table (for unicast entries) --------------------------------
 
     action set_egress_port(port_num_t port_num) {
         standard_metadata.egress_spec = port_num;
@@ -429,9 +676,6 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
             @defaultonly drop;
         }
         const default_action = drop;
-        // The @name annotation is used here to provide a name to this table
-        // counter, as it will be needed by the compiler to generate the
-        // corresponding P4Info entity.
         @name("l2_exact_table_counter")
         counters = direct_counter(CounterType.packets_and_bytes);
     }
@@ -459,49 +703,6 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
         @name("l2_ternary_table_counter")
         counters = direct_counter(CounterType.packets_and_bytes);
     }
-
-    table portall_to_multicast {
-
-        key = {
-            // exact match egress_port = 233
-            hdr.cpu_out.egress_port: exact;
-        }
-        actions = {
-            set_multicast_group;
-            @defaultonly drop;
-        }
-
-        const default_action = drop;
-
-        @name("portall_to_multicast_counter")
-        counters = direct_counter(CounterType.packets_and_bytes);
-
-    }
-
-
-    // *** TODO EXERCISE 5 (IPV6 ROUTING)
-    //
-    // 1. Create a table to to handle NDP messages to resolve the MAC address of
-    //    switch. This table should:
-    //    - match on hdr.ndp.target_ipv6_addr (exact match)
-    //    - provide action "ndp_ns_to_na" (look in snippets.p4)
-    //    - default_action should be "NoAction"
-    //
-    // 2. Create table to handle IPv6 routing. Create a L2 my station table (hit
-    //    when Ethernet destination address is the switch address). This table
-    //    should not do anything to the packet (i.e., NoAction), but the control
-    //    block below should use the result (table.hit) to decide how to process
-    //    the packet.
-    //
-    // 3. Create a table for IPv6 routing. An action selector should be use to
-    //    pick a next hop MAC address according to a hash of packet header
-    //    fields (IPv6 source/destination address and the flow label). Look in
-    //    snippets.p4 for an example of an action selector and table using it.
-    //
-    // You can name your tables whatever you like. You will need to fill
-    // the name in elsewhere in this exercise.
-
-    // --- ndp_reply_table -----------------------------------------------------
 
     action ndp_ns_to_na(mac_addr_t target_mac) {
         hdr.ethernet.src_addr = target_mac;
@@ -689,14 +890,6 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
     // packet clone_to_cpu equals to from ingress to egress directly
     // our probe packet need it's function, and ONOS can put it as p4 entry
     action clone_to_cpu() {
-        // Cloning is achieved by using a v1model-specific primitive. Here we
-        // set the type of clone operation (ingress-to-egress pipeline), the
-        // clone session ID (the CPU one), and the metadata fields we want to
-        // preserve for the cloned packet replica.
-
-        // ?????? can controll ingress_port there?
-        // standard_metadata.ingress_port=0x1;
-
         // if change here, the packet_out directly send back to onos will not be affected !
         clone3(CloneType.I2E, CPU_CLONE_SESSION_ID, { standard_metadata.ingress_port });
     }
@@ -748,6 +941,10 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
 
     apply {
 
+        if (m_classify.apply().hit) {
+            m_read.apply();
+            m_filter.apply();
+        }
         // limit throughput before doing l2_l3_forward
         // Check meter
         m_read.apply();
@@ -755,40 +952,19 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
         // Filter based on meter status
         m_filter.apply();
 
+        if (hdr.tcp.isValid())
+        {
+            meta.tmp_src_port = hdr.tcp.srcPort;
+            meta.tmp_dst_port = hdr.tcp.dstPort;
+        }
+        else if (hdr.udp.isValid())
+        {
+            meta.tmp_src_port = hdr.udp.srcPort;
+            meta.tmp_dst_port = hdr.udp.dstPort;
+        }
 
         bool do_acl = true;
         if (hdr.cpu_out.isValid()) {
-            // *** TODO EXERCISE 4
-            // Implement logic such that if this is a packet-out from the
-            // controller:
-            // 1. Set the packet egress port to that found in the cpu_out header
-            // 2. Remove (set invalid) the cpu_out header
-            // 3. Exit the pipeline here (no need to go through other tables
-
-            // check egress_port if hit port_all
-//            if (portall_to_multicast.apply().hit) {
-
-                // collect original ingress_port ???
-
-                // if hit, exits, then the packet will be multicast
-                // ONOS should set this table
-
-                // if hit, sender should modify the in_port == egress_spec
-                // and egress_spec will send to controller as "in_port"
-//                hdr.cpu_out.setInvalid();
-//                do_acl = false;
-                // exit; // go to egress for multicast
-                // so disunderstanding !
-                // a cpu_out's ingress_port = 255, so we should change it to MY_MULTICAST_LOGICAL_PORT
-                // NOTICE: the ingress_port should be set as egress_spec ??
-                // and turn to l2 forward
-//            } else {
-//                standard_metadata.egress_spec = hdr.cpu_out.egress_port;
-//                hdr.cpu_out.setInvalid();
-//                exit;
-//            }
-//        }
-
             if (hdr.cpu_out.egress_port == MY_MULTICAST_LOGICAL_PORT) {
                 // if egress_port = 233, then multicast
                 standard_metadata.mcast_grp = 0xfe;
@@ -805,12 +981,6 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
         bool do_l3_l2 = true;
 
         if (hdr.icmpv6.isValid() && hdr.icmpv6.type == ICMP6_TYPE_NS) {
-            // *** TODO EXERCISE 5
-            // Insert logic to handle NDP messages to resolve the MAC address of the
-            // switch. You should apply the NDP reply table created before.
-            // If this is an NDP NS packet, i.e., if a matching entry is found,
-            // unset the "do_l3_l2" flag to skip the L3 and L2 tables, as the
-            // "ndp_ns_to_na" action already set an egress port.
 
             if (ndp_reply_table.apply().hit) {
                 do_l3_l2 = false;
@@ -818,17 +988,6 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
         }
 
         if (do_l3_l2) {
-
-            // *** TODO EXERCISE 5
-            // Insert logic to match the My Station table and upon hit, the
-            // routing table. You should also add a conditional to drop the
-            // packet if the hop_limit reaches 0.
-
-            // *** TODO EXERCISE 6
-            // Insert logic to match the SRv6 My SID and Transit tables as well
-            // as logic to perform PSP behavior. HINT: This logic belongs
-            // somewhere between checking the switch's my station table and
-            // applying the routing table.
 
             if (hdr.ipv6.isValid() && my_station_table.apply().hit) {
 
@@ -868,18 +1027,56 @@ control IngressPipeImpl (inout parsed_headers_t    hdr,
         // the reason is that, standard_metadata.ingress_port that send to cpu
         // is always the first hop's CPU_PORT
         if (hdr.ethernet.ether_type == 0x0812) {
-            // change the standard_metadata.ingress_port
-            // WHY??? ingress_port finally will be 0
 
-            // so our ingress_port should be modified at this time!
-            // before match the acl_table
-            // standard_metadata.ingress_port  = standard_metadata.egress_spec;
         }
         if (do_acl) {
             acl_table.apply();
         }
+        // Assumes that the comunication is not host -- switch -- host, otherwise we
+        // would have to check that too
+        if (!hdr.loss.isValid())
+        {
+           hdr.loss.setValid();
+           hdr.loss.nextProtocol = hdr.ipv6.next_hdr;
+           hdr.ipv6.payload_len = hdr.ipv6.payload_len + 2;
+           hdr.ipv6.next_hdr = TYPE_LOSS;
+
+           local_metadata.dont_execute_dm = 1;
+        }
+        else
+        {
+           local_metadata.previous_batch_id = (bit<16>)hdr.loss.batch_id;
+        }
+        // Compute local batch
+        local_metadata.batch_id = (bit<16>)((standard_metadata.ingress_global_timestamp >> 21) % 2);
+        last_batch_id.read(local_metadata.last_local_batch_id, (bit<32>)0);
+        last_batch_id.write((bit<32>)0, local_metadata.batch_id);
+
+        // Only works if there is enough traffic. For example
+        // if there is 1 packet every 1 second it can happen
+        // that the batch id never changes
+        if (local_metadata.batch_id != local_metadata.last_local_batch_id)
+        {
+            // comment it
+            clone3(CloneType.I2E, 99, local_metadata);
+        }
+
+        // Update the header batch id with the current one
+        hdr.loss.batch_id = (bit<1>)local_metadata.batch_id;
+
+        compute_hash_indexes();
+        remove_loss_header.apply();
+
+        if (local_metadata.dont_execute_um == 0)
+        {
+           apply_um_meter();
+        }
+
+        if (local_metadata.dont_execute_dm == 0)
+        {
+           apply_dm_meter();
+        }
     }
-}
 
 
 control EgressPipeImpl (inout parsed_headers_t hdr,
@@ -887,24 +1084,19 @@ control EgressPipeImpl (inout parsed_headers_t hdr,
                         inout standard_metadata_t standard_metadata) {
     apply {
 
+        // If ingress clone
+        if (standard_metadata.instance_type == 1){
+            hdr.loss.setValid();
+            hdr.ipv6.setInvalid();
+            hdr.loss.batch_id = (bit<1>)meta.last_local_batch_id;
+            hdr.loss.padding = (bit<7>)0;
+            hdr.loss.nextProtocol = (bit<8>)0;
+            hdr.ethernet.etherType = LOSS_CHANGE_OF_BATCH;
+            truncate((bit<32>)16); //ether+loss header
+        }
+
         if (standard_metadata.egress_port == CPU_PORT) {
-            // *** TODO EXERCISE 4
-            // Implement logic such that if the packet is to be forwarded to the
-            // CPU port, e.g., if in ingress we matched on the ACL table with
-            // action send/clone_to_cpu...
-            // 1. Set cpu_in header as valid
-            // 2. Set the cpu_in.ingress_port field to the original packet's
-            //    ingress port (standard_metadata.ingress_port).
-
             hdr.cpu_in.setValid();
-            // egress_spec ==> physical port in switch
-            // egress_port ==> logical port in switch (such as CONTROLLER_PORT ...)
-
-            // in p4, set mcast_grp and egress_port at the same time seem impossible !!
-            // so we should get all port in controller ????
-
-            // standard_metadata.ingress_port = local_metadata.original_ingress_port;
-            // the second hop's ingress_port(as packet_in fwd port)
 
             if (hdr.ethernet.ether_type == 233) {
                 // ADD EXTRA LINK METRICS
@@ -962,6 +1154,8 @@ control DeparserImpl(packet_out packet, in parsed_headers_t hdr) {
         packet.emit(hdr.ipv6);
         packet.emit(hdr.srv6h);
         packet.emit(hdr.srv6_list);
+        // comment it
+        packet.emit(hdr.loss);
         packet.emit(hdr.tcp);
         packet.emit(hdr.udp);
         packet.emit(hdr.icmp);

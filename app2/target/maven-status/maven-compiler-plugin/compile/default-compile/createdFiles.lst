@@ -1,5 +1,4 @@
 org/onosproject/ngsdn/tutorial/GroupTableComponent.class
-org/onosproject/ngsdn/tutorial/Srv6InsertComponentService.class
 org/onosproject/ngsdn/tutorial/LinkMonitorComponent$LinkProbeReceiver.class
 org/onosproject/ngsdn/tutorial/LinkMonitorComponent$LinkQualifyProbeTask.class
 org/onosproject/ngsdn/tutorial/PDU.class
@@ -7,7 +6,6 @@ org/onosproject/ngsdn/tutorial/AppConstants.class
 org/onosproject/ngsdn/tutorial/AppWebResource.class
 org/onosproject/ngsdn/tutorial/GroupService.class
 org/onosproject/ngsdn/tutorial/AppMockECMPWebResource.class
-org/onosproject/ngsdn/tutorial/Srv6InsertComponent.class
 org/onosproject/ngsdn/tutorial/common/Utils.class
 org/onosproject/ngsdn/tutorial/AppWebApplication.class
 org/onosproject/ngsdn/tutorial/LinkMonitorComponent.class

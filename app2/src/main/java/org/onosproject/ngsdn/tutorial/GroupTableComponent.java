@@ -1,8 +1,10 @@
 package org.onosproject.ngsdn.tutorial;
 
+import com.google.common.collect.Lists;
 import jdk.jshell.execution.Util;
 import org.apache.commons.collections.bag.HashBag;
 import org.onlab.packet.IPv6;
+import org.onlab.packet.Ip6Address;
 import org.onlab.packet.MacAddress;
 import org.onosproject.cli.net.AddHostToHostIntentCommand;
 import org.onosproject.core.ApplicationId;
@@ -10,6 +12,7 @@ import org.onosproject.core.CoreService;
 import org.onosproject.net.*;
 import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.flow.FlowRule;
+import org.onosproject.net.flow.FlowRuleOperations;
 import org.onosproject.net.flow.FlowRuleService;
 import org.onosproject.net.flow.criteria.PiCriterion;
 import org.onosproject.net.group.GroupDescription;
@@ -18,6 +21,7 @@ import org.onosproject.net.link.LinkService;
 import org.onosproject.net.pi.model.PiActionId;
 import org.onosproject.net.pi.model.PiActionParamId;
 import org.onosproject.net.pi.model.PiMatchFieldId;
+import org.onosproject.net.pi.model.PiTableId;
 import org.onosproject.net.pi.runtime.PiAction;
 import org.onosproject.net.pi.runtime.PiActionParam;
 import org.onosproject.net.topology.TopologyService;
@@ -29,11 +33,11 @@ import org.slf4j.LoggerFactory;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+import static com.google.common.collect.Streams.stream;
 
 import static org.onosproject.ngsdn.tutorial.AppConstants.INITIAL_SETUP_DELAY;
 
@@ -78,6 +82,9 @@ public class GroupTableComponent implements GroupService {
     ConcurrentHashMap<String, GroupDescription> groupDescriptionMap = new ConcurrentHashMap<>();
     ConcurrentHashMap<String, Collection<PortNumber>> groupPortNumbersMap = new ConcurrentHashMap<>();
 
+    private List<List<String>> listOfSegments = new ArrayList<>();
+    private Integer currentSegment;
+
     @Override
     public Set<Host> getGroupInfo(String gname) {
         GroupDescription groupDescription = groupDescriptionMap.get(gname);
@@ -91,6 +98,50 @@ public class GroupTableComponent implements GroupService {
         }
         return ret;
     }
+
+    public void insertSrv6InsertRule(DeviceId deviceId, Ip6Address destIp, int prefixLength,
+                                     List<Ip6Address> segmentList) {
+        if (segmentList.size() < 2 || segmentList.size() > 3) {
+            throw new RuntimeException("List of " + segmentList.size() + " segments is not supported");
+        }
+
+        String tableId = "IngressPipeImpl.srv6_transit";
+
+        PiCriterion match = PiCriterion.builder()
+                .matchLpm(PiMatchFieldId.of("hdr.ipv6.dst_addr"), destIp.toOctets(), prefixLength)
+                .build();
+
+        List<PiActionParam> actionParams = Lists.newArrayList();
+
+        for (int i = 0; i < segmentList.size(); i++) {
+            PiActionParamId paramId = PiActionParamId.of("s" + (i + 1));
+            PiActionParam param = new PiActionParam(paramId, segmentList.get(i).toOctets());
+            actionParams.add(param);
+        }
+
+        PiAction action = PiAction.builder()
+                .withId(PiActionId.of("IngressPipeImpl.srv6_t_insert_" + segmentList.size()))
+                .withParameters(actionParams)
+                .build();
+        // ---- END SOLUTION ----
+
+        final FlowRule rule = Utils.buildFlowRule(
+                deviceId, appId, tableId, match, action);
+
+        flowRuleService.applyFlowRules(rule);
+    }
+
+    public void clearSrv6InsertRules(DeviceId deviceId) {
+        String tableId = "IngressPipeImpl.srv6_transit";
+
+        FlowRuleOperations.Builder ops = FlowRuleOperations.builder();
+        stream(flowRuleService.getFlowEntries(deviceId))
+                .filter(fe -> fe.appId() == appId.id())
+                .filter(fe -> fe.table().equals(PiTableId.of(tableId)))
+                .forEach(ops::remove);
+        flowRuleService.apply(ops.build());
+    }
+
 
     @Activate
     protected void activate() {
@@ -107,7 +158,41 @@ public class GroupTableComponent implements GroupService {
 
         // mapIpv6DstAddrToMulticast(DeviceId.deviceId("device:leaf2"));
 
+        // srv6-insert device:leaf1 3:201:2:: 3:102:2:: 2001:f:f::1
+        List<String> segments1 = new ArrayList<>();
+        segments1.add("3:201:2::"); // spine1
+        segments1.add("3:102:2::"); // leaf2
+        segments1.add("2001:f:f::1"); // group ipv6 address
+        listOfSegments.add(segments1);
+        currentSegment = 0;
+
+        List<String> segments2 = new ArrayList<>();
+        segments2.add("3:202:2::"); // spine2
+        segments2.add("3:102:2::"); // leaf2
+        segments2.add("2001:f:f::1"); // group ipv6 address
+
+        listOfSegments.add(segments2);
+        createMockSRV6Rule();
+
     }
+
+    @Override
+    public void mockUpdateECMPPath() {
+        log.info("port is disabled, changing srv6 path");
+        // update port stat to disabled
+        currentSegment = (currentSegment == 0) ? 1 : 0;
+        createMockSRV6Rule();
+    }
+
+    public void createMockSRV6Rule() {
+        List<Ip6Address> sids = listOfSegments.get(currentSegment).stream()
+                .map(Ip6Address::valueOf)
+                .collect(Collectors.toList());
+        Ip6Address destIp = sids.get(sids.size() - 1);
+        clearSrv6InsertRules(DeviceId.deviceId("device:leaf1"));
+        insertSrv6InsertRule(DeviceId.deviceId("device:leaf1"), destIp, 128, sids);
+    }
+
 
     @Override
     public void insertNewPortNumber(DeviceId deviceId, String groupName, PortNumber newPort) {

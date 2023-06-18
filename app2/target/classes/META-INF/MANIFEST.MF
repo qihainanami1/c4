@@ -1,5 +1,5 @@
 Manifest-Version: 1.0
-Bnd-LastModified: 1686660467365
+Bnd-LastModified: 1686899198517
 Build-Jdk: 11.0.1
 Built-By: p4
 Bundle-ClassPath: WEB-INF/classes
@@ -40,8 +40,7 @@ Import-Package: com.fasterxml.jackson.core;version="[2.10,3)",com.faster
  )",org.glassfish.jersey.servlet;version="[2.27,3)"
 Provide-Capability: osgi.service;objectClass:List<String>="org.onosproje
  ct.ngsdn.tutorial.DelayService",osgi.service;objectClass:List<String>="
- org.onosproject.ngsdn.tutorial.GroupService",osgi.service;objectClass:L
- ist<String>="org.onosproject.ngsdn.tutorial.Srv6InsertComponentService"
+ org.onosproject.ngsdn.tutorial.GroupService"
 Require-Capability: osgi.service;filter:="(objectClass=org.onosproject.c
  fg.ComponentConfigService)";effective:=active,osgi.service;filter:="(ob
  jectClass=org.onosproject.core.CoreService)";effective:=active,osgi.ser
@@ -63,7 +62,6 @@ Require-Capability: osgi.service;filter:="(objectClass=org.onosproject.c
  &(osgi.ee=JavaSE)(version=11))"
 Service-Component: OSGI-INF/org.onosproject.ngsdn.tutorial.ApiDocRegistr
  ator.xml,OSGI-INF/org.onosproject.ngsdn.tutorial.GroupTableComponent.xm
- l,OSGI-INF/org.onosproject.ngsdn.tutorial.LinkMonitorComponent.xml,OSGI
- -INF/org.onosproject.ngsdn.tutorial.Srv6InsertComponent.xml
+ l,OSGI-INF/org.onosproject.ngsdn.tutorial.LinkMonitorComponent.xml
 Tool: Bnd-4.1.0.201810181252
 Web-ContextPath: /onos/delay
